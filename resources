@@ -1,31 +1,41 @@
-#!/usr/bin/python3
-
 from kubernetes import client, config
 from decimal import Decimal
 from prettytable import PrettyTable
 
-config.load_kube_config()
 
-t = PrettyTable(['Namespace', 'Requested CPU', 'Requested Memory'])
+class KubernetesResourceSplitter(object):
+    """
+    This code exports .
+    """
+    def run(self):
+        config.load_kube_config()
+        pretty_table = PrettyTable(["Namespace", "Requested CPU", "Requested Memory"])
 
-v1 = client.CoreV1Api()
-namespaces = v1.list_namespace()
-for namespace in namespaces.items:
-    pod_list = v1.list_namespaced_pod(namespace.metadata.name)
-    mem=0
-    cpu=0
-    for pod in pod_list.items:
-        for container in pod.spec.containers:
-            memstr = container.resources.requests["memory"]
-            cpustr = container.resources.requests["cpu"] 
-            if "Mi" in memstr or "mi" in memstr:
-                mem+=int(memstr[:-2])
-            if "Gi" in memstr or "gi" in memstr:
-                mem+=1024*int(memstr[:-2])            
-            if "m" in cpustr or "M" in cpustr:
-                cpu+= Decimal(cpustr[:-1])
-            else:
-                cpu+= 1000 * Decimal(cpustr[:-1])
-    t.add_row([namespace.metadata.name, cpu, mem]) 
-       
-print (t)
+        api_v1 = client.CoreV1Api()
+        namespaces = api_v1.list_namespace()
+        for namespace in namespaces.items:
+            pod_list = api_v1.list_namespaced_pod(namespace.metadata.name)
+            mem = 0
+            cpu = 0
+            for pod in pod_list.items:
+                if pod.status.phase == 'Running':
+                    for container in pod.spec.containers:
+                        if container.resources.requests is None:
+                            continue
+                        mem_str = container.resources.requests.get("memory", "0Mi")
+                        cpu_str = container.resources.requests.get("cpu", "0m")
+                        if "Mi" in mem_str or "mi" in mem_str:
+                            mem += int(mem_str[:-2])
+                        if "Gi" in mem_str or "gi" in mem_str:
+                            mem += 1024 * int(mem_str[:-2])
+                        if "m" in cpu_str or "M" in cpu_str:
+                            cpu += Decimal(cpu_str[:-1])
+                        else:
+                            cpu += 1000 * Decimal(cpu_str)
+            pretty_table.add_row([namespace.metadata.name, cpu, mem])
+        print(pretty_table)
+
+
+if __name__ == "__main__":
+    splitter = KubernetesResourceSplitter()
+    splitter.run()
